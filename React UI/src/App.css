@@ -1,0 +1,6 @@
+/* Global app styles - most styles are in component CSS modules */
+
+#root {
+  min-height: 100vh;
+}
+
