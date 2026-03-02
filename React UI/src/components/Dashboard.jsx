@@ -117,19 +117,25 @@ const Dashboard = () => {
     saveToStorage(updatedFiles, updatedFolders);
   };
 
-  const handleDownloadFile = (file) => {
-    // Mock download - in real app, fetch from server
-    const blob = new Blob(["Mock file content for " + file.name], {
-      type: file.type,
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownloadFile = async (file) => {
+    try {
+      // Get download URL from API
+      const downloadData = await fileService.getDownloadUrl(file.id);
+
+      // Create invisible iframe to handle download
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      iframe.src = downloadData.downloadUrl || downloadData.url;
+      document.body.appendChild(iframe);
+
+      // Clean up after 5 seconds
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 5000);
+    } catch (error) {
+      console.error("Download failed:", error);
+      alert("Failed to download file: " + error.message);
+    }
   };
 
   const getRecentFiles = () => {
@@ -169,12 +175,6 @@ const Dashboard = () => {
           </div>
 
           <div className={styles.actions}>
-            <button
-              onClick={() => setShowFolderModal(true)}
-              className={styles.actionBtn}
-            >
-              📁 New Folder
-            </button>
             <label className={styles.actionBtn}>
               📤 Upload File
               <input
@@ -201,7 +201,7 @@ const Dashboard = () => {
         )}
 
         <section className={styles.section}>
-          <h3>{currentFolder ? "Contents" : "All Files & Folders"}</h3>
+          <h3>{currentFolder ? "Contents" : "All Files"}</h3>
           <FileList
             files={getCurrentFolderFiles()}
             folders={getCurrentSubfolders()}
@@ -215,9 +215,9 @@ const Dashboard = () => {
         {getCurrentFolderFiles().length === 0 &&
           getCurrentSubfolders().length === 0 && (
             <div className={styles.empty}>
-              <p>No files or folders yet</p>
+              <p>No files yet</p>
               <p className={styles.hint}>
-                Upload files or create folders to get started
+                Upload files to get started
               </p>
             </div>
           )}

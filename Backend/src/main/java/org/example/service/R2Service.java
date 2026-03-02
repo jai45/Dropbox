@@ -50,10 +50,11 @@ public class R2Service {
     /**
      * Generates a presigned GET URL so the client can download directly from R2.
      */
-    public String generateDownloadUrl(String objectKey) {
+    public String generateDownloadUrl(String objectKey, String originalName) {
         GetObjectRequest getRequest = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(objectKey)
+                .responseContentDisposition("attachment; filename=\"" + originalName + "\"")
                 .build();
 
         PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(

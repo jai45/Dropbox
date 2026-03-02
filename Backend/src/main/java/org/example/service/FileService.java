@@ -60,6 +60,6 @@ public class FileService {
     public String getDownloadUrl(UUID fileId) {
         FileMetadata file = fileMetadataRepository.findById(fileId)
                 .orElseThrow(() -> new IllegalArgumentException("File not found: " + fileId));
-        return r2Service.generateDownloadUrl(file.getObjectKey());
+        return r2Service.generateDownloadUrl(file.getObjectKey(), file.getOriginalName());
     }
 }

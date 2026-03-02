@@ -38,4 +38,9 @@ export const fileService = {
 
     return response;
   },
+
+  async getDownloadUrl(fileId) {
+    // Simply return the API endpoint - let the browser follow the redirect
+    return { downloadUrl: `${API_BASE_URL}/files/${fileId}` };
+  },
 };
