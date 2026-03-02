@@ -1,19 +1,15 @@
+import { apiClient } from "../utils/apiClient";
+
 const API_BASE_URL = "http://localhost:8080/api/v1";
 
 export const fileService = {
   async getPresignedUrl(file, ownerId) {
-    const response = await fetch(`${API_BASE_URL}/files/presign`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        ownerId: ownerId,
-        originalName: file.name,
-        contentType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        status: "Pending",
-      }),
+    const response = await apiClient.post("/files/presign", {
+      ownerId: ownerId,
+      originalName: file.name,
+      contentType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      status: "Pending",
     });
 
     if (!response.ok) {
@@ -39,8 +35,15 @@ export const fileService = {
     return response;
   },
 
-  async getDownloadUrl(fileId) {
-    // Simply return the API endpoint - let the browser follow the redirect
-    return { downloadUrl: `${API_BASE_URL}/files/${fileId}` };
+  async downloadFile(fileId) {
+    // Call API with auth to get presigned download URL
+    const response = await apiClient.get(`/files/${fileId}/download`);
+
+    if (!response.ok) {
+      throw new Error("Failed to get download URL");
+    }
+
+    const data = await response.json();
+    return data.downloadUrl; // Return the presigned URL
   },
 };

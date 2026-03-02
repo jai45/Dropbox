@@ -22,7 +22,7 @@ const Header = () => {
         </button>
 
         <div className={styles.user}>
-          <span>{user?.name}</span>
+          <span>{user?.username || user?.name || user?.email}</span>
           <button onClick={logout} className={styles.logoutBtn}>
             Logout
           </button>

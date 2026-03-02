@@ -20,21 +20,20 @@ const Dashboard = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
 
-  // Use hardcoded ownerId or derive from user email
-  const ownerId = "a55f55f2-1fe4-4388-bab2-b9e1d4fe0e34";
+  // Use userId from authenticated user
+  const ownerId = user?.userId || "a55f55f2-1fe4-4388-bab2-b9e1d4fe0e34";
 
-  const saveToStorage = (newFiles, newFolders) => {
-    localStorage.setItem("files", JSON.stringify(newFiles));
-    localStorage.setItem("folders", JSON.stringify(newFolders));
+  const saveToStorage = (updatedFiles, updatedFolders) => {
+    localStorage.setItem("files", JSON.stringify(updatedFiles));
+    localStorage.setItem("folders", JSON.stringify(updatedFolders));
   };
 
-  const handleFileSelect = (e) => {
-    const uploadedFiles = Array.from(e.target.files);
-    if (uploadedFiles.length > 0) {
-      setSelectedFiles(uploadedFiles);
+  const handleFileSelect = (event) => {
+    const files = Array.from(event.target.files);
+    if (files.length > 0) {
+      setSelectedFiles(files);
       setShowUploadModal(true);
     }
-    e.target.value = ""; // Reset input so same file can be selected again
   };
 
   const handleFileUpload = async (filesWithNewNames, onProgress) => {
@@ -119,19 +118,11 @@ const Dashboard = () => {
 
   const handleDownloadFile = async (file) => {
     try {
-      // Get download URL from API
-      const downloadData = await fileService.getDownloadUrl(file.id);
+      // Get presigned download URL from API (with auth)
+      const downloadUrl = await fileService.downloadFile(file.id);
 
-      // Create invisible iframe to handle download
-      const iframe = document.createElement("iframe");
-      iframe.style.display = "none";
-      iframe.src = downloadData.downloadUrl || downloadData.url;
-      document.body.appendChild(iframe);
-
-      // Clean up after 5 seconds
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 5000);
+      // Open presigned URL directly - avoids CORS issues
+      window.location.href = downloadUrl;
     } catch (error) {
       console.error("Download failed:", error);
       alert("Failed to download file: " + error.message);
@@ -216,9 +207,7 @@ const Dashboard = () => {
           getCurrentSubfolders().length === 0 && (
             <div className={styles.empty}>
               <p>No files yet</p>
-              <p className={styles.hint}>
-                Upload files to get started
-              </p>
+              <p className={styles.hint}>Upload files to get started</p>
             </div>
           )}
       </main>

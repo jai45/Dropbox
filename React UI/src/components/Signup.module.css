@@ -73,6 +73,11 @@
   border-color: var(--primary);
 }
 
+.inputGroup input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .button {
   background-color: var(--primary);
   color: white;
@@ -85,8 +90,13 @@
   transition: background-color 0.2s;
 }
 
-.button:hover {
+.button:hover:not(:disabled) {
   background-color: var(--primary-hover);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .footer {

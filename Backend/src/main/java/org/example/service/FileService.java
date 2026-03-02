@@ -1,5 +1,6 @@
 package org.example.service;
 
+import org.example.dto.DownloadUrlResponse;
 import org.example.dto.PresignRequest;
 import org.example.dto.PresignResponse;
 import org.example.model.FileMetadata;
@@ -55,11 +56,12 @@ public class FileService {
     }
 
     /**
-     * Generates a presigned GET URL for an existing file (used for redirect).
+     * Generates a presigned GET URL for an existing file and returns it as a JSON response.
      */
-    public String getDownloadUrl(UUID fileId) {
+    public DownloadUrlResponse getDownloadUrl(UUID fileId) {
         FileMetadata file = fileMetadataRepository.findById(fileId)
                 .orElseThrow(() -> new IllegalArgumentException("File not found: " + fileId));
-        return r2Service.generateDownloadUrl(file.getObjectKey(), file.getOriginalName());
+        String downloadUrl = r2Service.generateDownloadUrl(file.getObjectKey(), file.getOriginalName());
+        return new DownloadUrlResponse(file.getId(), file.getOriginalName(), downloadUrl);
     }
 }
