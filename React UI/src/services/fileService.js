@@ -1,6 +1,6 @@
 import { apiClient } from "../utils/apiClient";
 
-const API_BASE_URL = "http://localhost:8080/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export const fileService = {
   async getPresignedUrl(file, ownerId) {
@@ -45,5 +45,25 @@ export const fileService = {
 
     const data = await response.json();
     return data.downloadUrl; // Return the presigned URL
+  },
+
+  async getAllFiles() {
+    const response = await apiClient.get("/files");
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch files");
+    }
+
+    return response.json();
+  },
+
+  async deleteFile(fileId) {
+    const response = await apiClient.delete(`/files/${fileId}`);
+
+    if (!response.ok) {
+      throw new Error("Failed to delete file");
+    }
+
+    return true;
   },
 };

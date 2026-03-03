@@ -9,6 +9,13 @@
   padding: 2rem;
 }
 
+.loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
 .toolbar {
   background-color: var(--bg-primary);
   padding: 1rem 1.5rem;

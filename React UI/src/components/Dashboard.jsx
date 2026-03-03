@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "./Header";
 import FileList from "./FileList";
 import Modal from "./Modal";
@@ -9,9 +9,7 @@ import styles from "./Dashboard.module.css";
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const [files, setFiles] = useState(() => {
-    return JSON.parse(localStorage.getItem("files") || "[]");
-  });
+  const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState(() => {
     return JSON.parse(localStorage.getItem("folders") || "[]");
   });
@@ -19,9 +17,31 @@ const Dashboard = () => {
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // Use userId from authenticated user
-  const ownerId = user?.userId || "a55f55f2-1fe4-4388-bab2-b9e1d4fe0e34";
+  const ownerId = user?.userId;
+
+  // Fetch files from API on mount
+  useEffect(() => {
+    const fetchFiles = async () => {
+      try {
+        setLoading(true);
+        const filesData = await fileService.getAllFiles();
+        setFiles(filesData);
+        localStorage.setItem("files", JSON.stringify(filesData));
+      } catch (error) {
+        console.error("Failed to fetch files:", error);
+        // Fallback to localStorage if API fails
+        const cachedFiles = JSON.parse(localStorage.getItem("files") || "[]");
+        setFiles(cachedFiles);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFiles();
+  }, []);
 
   const saveToStorage = (updatedFiles, updatedFolders) => {
     localStorage.setItem("files", JSON.stringify(updatedFiles));
@@ -102,10 +122,19 @@ const Dashboard = () => {
     saveToStorage(files, updatedFolders);
   };
 
-  const handleDeleteFile = (fileId) => {
-    const updatedFiles = files.filter((f) => f.id !== fileId);
-    setFiles(updatedFiles);
-    saveToStorage(updatedFiles, folders);
+  const handleDeleteFile = async (fileId) => {
+    try {
+      // Call delete API
+      await fileService.deleteFile(fileId);
+
+      // Update local state after successful deletion
+      const updatedFiles = files.filter((f) => f.id !== fileId);
+      setFiles(updatedFiles);
+      saveToStorage(updatedFiles, folders);
+    } catch (error) {
+      console.error("Failed to delete file:", error);
+      alert("Failed to delete file: " + error.message);
+    }
   };
 
   const handleDeleteFolder = (folderId) => {
@@ -121,7 +150,7 @@ const Dashboard = () => {
       // Get presigned download URL from API (with auth)
       const downloadUrl = await fileService.downloadFile(file.id);
 
-      // Open presigned URL directly - avoids CORS issues
+      // Open presigned URL directly
       window.location.href = downloadUrl;
     } catch (error) {
       console.error("Download failed:", error);
@@ -193,14 +222,18 @@ const Dashboard = () => {
 
         <section className={styles.section}>
           <h3>{currentFolder ? "Contents" : "All Files"}</h3>
-          <FileList
-            files={getCurrentFolderFiles()}
-            folders={getCurrentSubfolders()}
-            onFileDelete={handleDeleteFile}
-            onFolderDelete={handleDeleteFolder}
-            onFileDownload={handleDownloadFile}
-            onFolderClick={setCurrentFolder}
-          />
+          {loading ? (
+            <div className={styles.loading}>Loading files...</div>
+          ) : (
+            <FileList
+              files={getCurrentFolderFiles()}
+              folders={getCurrentSubfolders()}
+              onFileDelete={handleDeleteFile}
+              onFolderDelete={handleDeleteFolder}
+              onFileDownload={handleDownloadFile}
+              onFolderClick={setCurrentFolder}
+            />
+          )}
         </section>
 
         {getCurrentFolderFiles().length === 0 &&

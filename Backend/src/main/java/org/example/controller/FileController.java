@@ -7,11 +7,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.dto.DownloadUrlResponse;
+import org.example.dto.FileDto;
 import org.example.dto.PresignRequest;
 import org.example.dto.PresignResponse;
+import org.example.model.User;
 import org.example.service.FileService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -43,7 +46,35 @@ public class FileController {
     }
 
     @Operation(
-            summary = "Get presigned download URL",
+            summary = "List all files for the logged-in user",
+            security = @SecurityRequirement(name = "bearerAuth"),
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Files returned")
+            }
+    )
+    @GetMapping
+    public ResponseEntity<java.util.List<FileDto>> listFiles(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(fileService.listFiles(user));
+    }
+
+    @Operation(
+            summary = "Soft-delete a file",
+            description = "Marks the file as deleted in the database. File is retained in Cloudflare R2.",
+            security = @SecurityRequirement(name = "bearerAuth"),
+            responses = {
+                    @ApiResponse(responseCode = "204", description = "File deleted"),
+                    @ApiResponse(responseCode = "404", description = "File not found"),
+                    @ApiResponse(responseCode = "400", description = "Access denied")
+            }
+    )
+    @DeleteMapping("/{fileId}")
+    public ResponseEntity<Void> deleteFile(@PathVariable UUID fileId,
+                                           @AuthenticationPrincipal User user) {
+        fileService.deleteFile(fileId, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(
             description = "Returns a presigned GET URL for direct download from Cloudflare R2",
             security = @SecurityRequirement(name = "bearerAuth"),
             responses = {

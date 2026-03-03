@@ -1,14 +1,26 @@
 import { authService } from "../services/authService";
 
-const API_BASE_URL = "http://localhost:8080/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api/v1";
 
 const isTokenExpired = () => {
   const authData = localStorage.getItem("authData");
   if (!authData) return true;
 
-  const { expiresAt } = JSON.parse(authData);
-  // Add 60 second buffer - refresh if token expires in less than 60 seconds
-  return Date.now() >= expiresAt - 60000;
+  try {
+    const { expiresAt } = JSON.parse(authData);
+    
+    // If expiresAt is missing or invalid, consider token expired
+    if (!expiresAt || typeof expiresAt !== 'number') {
+      return true;
+    }
+    
+    // Add 60 second buffer - refresh if token expires in less than 60 seconds
+    const now = Date.now();
+    return now >= expiresAt - 60000;
+  } catch (error) {
+    // If parsing fails, consider token expired
+    return true;
+  }
 };
 
 const refreshTokenIfNeeded = async () => {
@@ -28,7 +40,7 @@ const refreshTokenIfNeeded = async () => {
       accessToken: response.accessToken,
       refreshToken: response.refreshToken,
       accessExpiresIn: response.accessExpiresIn,
-      expiresAt: Date.now() + response.accessExpiresIn * 1000,
+      expiresAt: Date.now() + response.accessExpiresIn,
     };
 
     localStorage.setItem("authData", JSON.stringify(authData));

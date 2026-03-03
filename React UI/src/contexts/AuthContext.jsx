@@ -31,7 +31,7 @@ export const AuthProvider = ({ children }) => {
       accessToken: response.accessToken,
       refreshToken: response.refreshToken,
       accessExpiresIn: response.accessExpiresIn,
-      expiresAt: Date.now() + response.accessExpiresIn * 1000,
+      expiresAt: Date.now() + response.accessExpiresIn,
     };
 
     setUser(userData);
@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
       accessToken: response.accessToken,
       refreshToken: response.refreshToken,
       accessExpiresIn: response.accessExpiresIn,
-      expiresAt: Date.now() + response.accessExpiresIn * 1000,
+      expiresAt: Date.now() + response.accessExpiresIn,
     };
 
     setUser(userData);
@@ -94,7 +94,7 @@ export const AuthProvider = ({ children }) => {
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
         accessExpiresIn: response.accessExpiresIn,
-        expiresAt: Date.now() + response.accessExpiresIn * 1000,
+        expiresAt: Date.now() + response.accessExpiresIn,
       };
 
       localStorage.setItem("authData", JSON.stringify(authData));

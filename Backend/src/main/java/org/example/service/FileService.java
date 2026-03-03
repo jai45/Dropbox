@@ -1,6 +1,7 @@
 package org.example.service;
 
 import org.example.dto.DownloadUrlResponse;
+import org.example.dto.FileDto;
 import org.example.dto.PresignRequest;
 import org.example.dto.PresignResponse;
 import org.example.model.FileMetadata;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -59,9 +61,45 @@ public class FileService {
      * Generates a presigned GET URL for an existing file and returns it as a JSON response.
      */
     public DownloadUrlResponse getDownloadUrl(UUID fileId) {
-        FileMetadata file = fileMetadataRepository.findById(fileId)
+        FileMetadata file = fileMetadataRepository.findByIdAndIsDeleted(fileId, "N")
                 .orElseThrow(() -> new IllegalArgumentException("File not found: " + fileId));
         String downloadUrl = r2Service.generateDownloadUrl(file.getObjectKey(), file.getOriginalName());
         return new DownloadUrlResponse(file.getId(), file.getOriginalName(), downloadUrl);
+    }
+
+    /**
+     * Returns all non-deleted files belonging to the given user mapped to FileDto.
+     */
+    public List<FileDto> listFiles(User owner) {
+        return fileMetadataRepository.findByOwnerAndIsDeletedOrderByCreatedAtDesc(owner, "N")
+                .stream()
+                .map(f -> new FileDto(
+                        f.getId(),
+                        f.getOriginalName(),
+                        f.getSizeBytes(),
+                        f.getContentType(),
+                        f.getCreatedAt(),
+                        f.getFolder() != null ? f.getFolder().getId() : null,
+                        f.getObjectKey(),
+                        f.getStatus()
+                ))
+                .toList();
+    }
+
+    /**
+     * Soft-deletes a file by setting isDeleted = 'Y'. File remains in R2.
+     * Throws if the file doesn't exist, is already deleted, or doesn't belong to the owner.
+     */
+    @Transactional
+    public void deleteFile(UUID fileId, User owner) {
+        FileMetadata file = fileMetadataRepository.findByIdAndIsDeleted(fileId, "N")
+                .orElseThrow(() -> new IllegalArgumentException("File not found: " + fileId));
+
+        if (!file.getOwner().getId().equals(owner.getId())) {
+            throw new IllegalArgumentException("Access denied");
+        }
+
+        file.setIsDeleted("Y");
+        fileMetadataRepository.save(file);
     }
 }

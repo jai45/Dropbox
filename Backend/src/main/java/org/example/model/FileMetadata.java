@@ -37,6 +37,9 @@ public class FileMetadata {
     @Column(nullable = false)
     private String status;
 
+    @Column(name = "is_deleted", nullable = false)
+    private String isDeleted = "N";
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 }
