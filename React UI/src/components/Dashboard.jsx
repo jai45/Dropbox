@@ -63,34 +63,47 @@ const Dashboard = () => {
       const item = filesWithNewNames[i];
 
       try {
-        // Update progress: Getting presigned URL
-        onProgress(i, 10);
+        let fileId, objectKey;
 
-        // Step 1: Get presigned URL
-        const presignResponse = await fileService.getPresignedUrl(
-          item.originalFile,
-          ownerId,
-        );
+        if (fileService.isMultipart(item.originalFile)) {
+          // ── Multipart upload for files > 10 MB ──
+          const result = await fileService.multipartUpload(
+            item.originalFile,
+            ownerId,
+            (progress) => onProgress(i, progress),
+          );
+          fileId = result.fileId;
+          objectKey = result.objectKey;
+        } else {
+          // ── Regular single presigned URL upload ──
+          onProgress(i, 10);
 
-        onProgress(i, 30);
+          const presignResponse = await fileService.getPresignedUrl(
+            item.originalFile,
+            ownerId,
+          );
 
-        // Step 2: Upload file to presigned URL
-        await fileService.uploadToPresignedUrl(
-          presignResponse.uploadUrl,
-          item.originalFile,
-        );
+          onProgress(i, 30);
 
-        onProgress(i, 90);
+          await fileService.uploadToPresignedUrl(
+            presignResponse.uploadUrl,
+            item.originalFile,
+          );
 
-        // Step 3: Add to local state
+          onProgress(i, 90);
+
+          fileId = presignResponse.fileId;
+          objectKey = presignResponse.objectKey;
+        }
+
         const newFile = {
-          id: presignResponse.fileId,
+          id: fileId,
           name: item.newName,
           size: item.originalFile.size,
           type: item.originalFile.type || "application/octet-stream",
           uploadedAt: new Date().toISOString(),
           folderId: currentFolder,
-          objectKey: presignResponse.objectKey,
+          objectKey,
           status: "Uploaded",
         };
 

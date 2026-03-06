@@ -1,6 +1,28 @@
 import { apiClient } from "../utils/apiClient";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const MULTIPART_THRESHOLD = 10 * 1024 * 1024; // 10 MB
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB
+const CONCURRENCY_LIMIT = 6; // Max parallel uploads at a time
+
+// Runs `tasks` with at most `limit` running at once
+const concurrentLimit = async (tasks, limit) => {
+  const results = new Array(tasks.length);
+  let index = 0;
+
+  const worker = async () => {
+    while (index < tasks.length) {
+      const current = index++;
+      results[current] = await tasks[current]();
+    }
+  };
+
+  // Spin up `limit` workers — each worker picks the next task when free
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, worker),
+  );
+
+  return results;
+};
 
 export const fileService = {
   async getPresignedUrl(file, ownerId) {
@@ -65,5 +87,116 @@ export const fileService = {
     }
 
     return true;
+  },
+
+  // ── Multipart upload ──────────────────────────────────────────────────────
+
+  isMultipart(file) {
+    return file.size > MULTIPART_THRESHOLD;
+  },
+
+  async initiateMultipartUpload(file, ownerId) {
+    const partCount = Math.ceil(file.size / CHUNK_SIZE);
+
+    const response = await apiClient.post("/multipart/initiate", {
+      ownerId,
+      originalName: file.name,
+      contentType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      partCount,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to initiate multipart upload");
+    }
+
+    // Returns: { uploadId, fileId, objectKey, parts: [{ partNumber, uploadUrl }] }
+    return response.json();
+  },
+
+  async uploadPart(uploadUrl, chunk, partNumber) {
+    const response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/octet-stream",
+      },
+      body: chunk,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload part ${partNumber}`);
+    }
+
+    // R2/S3 returns ETag in the response header
+    const etag = response.headers.get("ETag") || response.headers.get("etag");
+    return { partNumber, etag };
+  },
+
+  async completeMultipartUpload(uploadSessionId, parts) {
+    const response = await apiClient.post("/multipart/complete", {
+      uploadSessionId,
+      parts: parts.map(({ partNumber, etag }) => ({
+        partNumber,
+        eTag: etag, // backend expects eTag (capital T)
+      })),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to complete multipart upload");
+    }
+
+    return response.json();
+  },
+
+  async abortMultipartUpload(uploadSessionId) {
+    try {
+      await apiClient.post("/multipart/abort", { uploadSessionId });
+    } catch (error) {
+      console.error("Failed to abort multipart upload:", error);
+    }
+  },
+
+  async multipartUpload(file, ownerId, onProgress) {
+    let uploadSessionId = null;
+
+    try {
+      // Step 1: Initiate — backend returns all presigned part URLs at once
+      onProgress(5);
+      const initResponse = await this.initiateMultipartUpload(file, ownerId);
+      uploadSessionId = initResponse.uploadSessionId;
+      const parts = initResponse.parts; // [{ partNumber, presignedUrl }]
+
+      onProgress(10);
+
+      // Step 2: Upload all chunks with a concurrency limit of 6
+      let completedParts = 0;
+      const tasks = parts.map(({ partNumber, presignedUrl }) => async () => {
+        const start = (partNumber - 1) * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+
+        const result = await this.uploadPart(presignedUrl, chunk, partNumber);
+
+        completedParts++;
+        onProgress(Math.min(90, 10 + (completedParts / parts.length) * 80));
+
+        return result;
+      });
+
+      const partResults = await concurrentLimit(tasks, CONCURRENCY_LIMIT);
+
+      // Step 3: Complete — send all ETags to assemble the final object on R2
+      onProgress(92);
+      await this.completeMultipartUpload(uploadSessionId, partResults);
+      onProgress(100);
+
+      return { fileId: initResponse.fileId, objectKey: initResponse.objectKey };
+    } catch (error) {
+      // Abort to clean up dangling parts on R2
+      if (uploadSessionId) {
+        await this.abortMultipartUpload(uploadSessionId);
+      }
+      throw error;
+    }
   },
 };
