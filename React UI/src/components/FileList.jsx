@@ -85,11 +85,7 @@ const FileList = ({
                   ⬇️
                 </button>
                 <button
-                  onClick={() => {
-                    if (window.confirm(`Delete "${file.name}"?`)) {
-                      onFileDelete(file.id);
-                    }
-                  }}
+                  onClick={() => {onFileDelete(file.id);}}
                   className={styles.deleteBtn}
                   title="Delete"
                 >

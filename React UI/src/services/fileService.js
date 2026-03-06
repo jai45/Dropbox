@@ -25,14 +25,18 @@ const concurrentLimit = async (tasks, limit) => {
 };
 
 export const fileService = {
-  async getPresignedUrl(file, ownerId) {
-    const response = await apiClient.post("/files/presign", {
-      ownerId: ownerId,
-      originalName: file.name,
-      contentType: file.type || "application/octet-stream",
-      sizeBytes: file.size,
-      status: "Pending",
-    });
+  async getPresignedUrl(file, ownerId, signal) {
+    const response = await apiClient.post(
+      "/files/presign",
+      {
+        ownerId: ownerId,
+        originalName: file.name,
+        contentType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        status: "Pending",
+      },
+      { signal },
+    );
 
     if (!response.ok) {
       throw new Error("Failed to get presigned URL");
@@ -41,13 +45,14 @@ export const fileService = {
     return response.json();
   },
 
-  async uploadToPresignedUrl(uploadUrl, file) {
+  async uploadToPresignedUrl(uploadUrl, file, signal) {
     const response = await fetch(uploadUrl, {
       method: "PUT",
       headers: {
         "Content-Type": file.type || "application/octet-stream",
       },
       body: file,
+      signal,
     });
 
     if (!response.ok) {
@@ -95,16 +100,20 @@ export const fileService = {
     return file.size > MULTIPART_THRESHOLD;
   },
 
-  async initiateMultipartUpload(file, ownerId) {
+  async initiateMultipartUpload(file, ownerId, signal) {
     const partCount = Math.ceil(file.size / CHUNK_SIZE);
 
-    const response = await apiClient.post("/multipart/initiate", {
-      ownerId,
-      originalName: file.name,
-      contentType: file.type || "application/octet-stream",
-      sizeBytes: file.size,
-      partCount,
-    });
+    const response = await apiClient.post(
+      "/multipart/initiate",
+      {
+        ownerId,
+        originalName: file.name,
+        contentType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        partCount,
+      },
+      { signal },
+    );
 
     if (!response.ok) {
       throw new Error("Failed to initiate multipart upload");
@@ -114,13 +123,14 @@ export const fileService = {
     return response.json();
   },
 
-  async uploadPart(uploadUrl, chunk, partNumber) {
+  async uploadPart(uploadUrl, chunk, partNumber, signal) {
     const response = await fetch(uploadUrl, {
       method: "PUT",
       headers: {
         "Content-Type": "application/octet-stream",
       },
       body: chunk,
+      signal,
     });
 
     if (!response.ok) {
@@ -156,36 +166,48 @@ export const fileService = {
     }
   },
 
-  async multipartUpload(file, ownerId, onProgress) {
+  async multipartUpload(file, ownerId, onProgress, signal) {
     let uploadSessionId = null;
 
     try {
-      // Step 1: Initiate — backend returns all presigned part URLs at once
+      // Step 1: Initiate
       onProgress(5);
-      const initResponse = await this.initiateMultipartUpload(file, ownerId);
+      const initResponse = await this.initiateMultipartUpload(
+        file,
+        ownerId,
+        signal,
+      );
       uploadSessionId = initResponse.uploadSessionId;
-      const parts = initResponse.parts; // [{ partNumber, presignedUrl }]
+      const parts = initResponse.parts;
 
       onProgress(10);
 
       // Step 2: Upload all chunks with a concurrency limit of 6
       let completedParts = 0;
       const tasks = parts.map(({ partNumber, presignedUrl }) => async () => {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const start = (partNumber - 1) * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const chunk = file.slice(start, end);
 
-        const result = await this.uploadPart(presignedUrl, chunk, partNumber);
+        const result = await this.uploadPart(
+          presignedUrl,
+          chunk,
+          partNumber,
+          signal,
+        );
 
         completedParts++;
-        onProgress(Math.min(90, 10 + (completedParts / parts.length) * 80));
+        onProgress(
+          Math.round(Math.min(90, 10 + (completedParts / parts.length) * 80)),
+        );
 
         return result;
       });
 
       const partResults = await concurrentLimit(tasks, CONCURRENCY_LIMIT);
 
-      // Step 3: Complete — send all ETags to assemble the final object on R2
+      // Step 3: Complete
       onProgress(92);
       await this.completeMultipartUpload(uploadSessionId, partResults);
       onProgress(100);

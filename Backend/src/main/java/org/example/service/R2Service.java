@@ -148,7 +148,7 @@ public class R2Service {
         CompletedMultipartUpload completedUpload = CompletedMultipartUpload.builder()
                 .parts(completedParts)
                 .build();
-        
+
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder()
                 .bucket(bucket)
                 .key(objectKey)

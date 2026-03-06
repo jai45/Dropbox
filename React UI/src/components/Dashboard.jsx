@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Header from "./Header";
 import FileList from "./FileList";
 import Modal from "./Modal";
 import FileUploadModal from "./FileUploadModal";
+import UploadToast from "./UploadToast";
+import ConfirmDialog from "./ConfirmDialog";
 import { fileService } from "../services/fileService";
 import { useAuth } from "../contexts/AuthContext";
 import styles from "./Dashboard.module.css";
@@ -18,12 +20,19 @@ const Dashboard = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [uploadQueue, setUploadQueue] = useState([]);
+  const [confirmDelete, setConfirmDelete] = useState(null); // { type: 'file'|'folder', id, name }
+  const hasFetched = useRef(false);
+  const abortControllersRef = useRef({});
 
   // Use userId from authenticated user
   const ownerId = user?.userId;
 
   // Fetch files from API on mount
   useEffect(() => {
+    if (hasFetched.current) return; // Skip second StrictMode call
+    hasFetched.current = true;
+
     const fetchFiles = async () => {
       try {
         setLoading(true);
@@ -56,11 +65,39 @@ const Dashboard = () => {
     }
   };
 
+  const handleCancelUpload = (index) => {
+    const controller = abortControllersRef.current[index];
+    if (controller) {
+      controller.abort();
+      delete abortControllersRef.current[index];
+    }
+  };
+
   const handleFileUpload = async (filesWithNewNames, onProgress) => {
+    // Close modal immediately and seed the toast with 0% entries
+    setShowUploadModal(false);
+    setSelectedFiles([]);
+    const initialQueue = filesWithNewNames.map((item, i) => ({
+      id: i,
+      name: item.newName,
+      progress: 0,
+      status: "uploading",
+    }));
+    setUploadQueue(initialQueue);
+    abortControllersRef.current = {};
+
+    const updateToast = (index, progress, status = "uploading") => {
+      setUploadQueue((prev) =>
+        prev.map((u) => (u.id === index ? { ...u, progress, status } : u)),
+      );
+    };
+
     const uploadedFiles = [];
 
     for (let i = 0; i < filesWithNewNames.length; i++) {
       const item = filesWithNewNames[i];
+      const controller = new AbortController();
+      abortControllersRef.current[i] = controller;
 
       try {
         let fileId, objectKey;
@@ -70,27 +107,36 @@ const Dashboard = () => {
           const result = await fileService.multipartUpload(
             item.originalFile,
             ownerId,
-            (progress) => onProgress(i, progress),
+            (progress) => {
+              onProgress(i, progress);
+              updateToast(i, progress);
+            },
+            controller.signal,
           );
           fileId = result.fileId;
           objectKey = result.objectKey;
         } else {
           // ── Regular single presigned URL upload ──
           onProgress(i, 10);
+          updateToast(i, 10);
 
           const presignResponse = await fileService.getPresignedUrl(
             item.originalFile,
             ownerId,
+            controller.signal,
           );
 
           onProgress(i, 30);
+          updateToast(i, 30);
 
           await fileService.uploadToPresignedUrl(
             presignResponse.uploadUrl,
             item.originalFile,
+            controller.signal,
           );
 
           onProgress(i, 90);
+          updateToast(i, 90);
 
           fileId = presignResponse.fileId;
           objectKey = presignResponse.objectKey;
@@ -109,17 +155,28 @@ const Dashboard = () => {
 
         uploadedFiles.push(newFile);
         onProgress(i, 100);
+        updateToast(i, 100, "done");
+        delete abortControllersRef.current[i];
       } catch (error) {
-        console.error(`Failed to upload ${item.newName}:`, error);
-        throw new Error(`Failed to upload ${item.newName}: ${error.message}`);
+        if (error.name === "AbortError") {
+          console.log(`Upload cancelled: ${item.newName}`);
+          updateToast(i, 0, "cancelled");
+        } else {
+          console.error(`Failed to upload ${item.newName}:`, error);
+          updateToast(i, 0, "error");
+        }
       }
     }
 
-    // Update state with all uploaded files
-    const updatedFiles = [...files, ...uploadedFiles];
-    setFiles(updatedFiles);
-    saveToStorage(updatedFiles, folders);
-    setSelectedFiles([]);
+    // Update state with all successfully uploaded files
+    if (uploadedFiles.length > 0) {
+      const updatedFiles = [...files, ...uploadedFiles];
+      setFiles(updatedFiles);
+      saveToStorage(updatedFiles, folders);
+    }
+
+    // Auto-dismiss toast after 4 seconds when all done
+    setTimeout(() => setUploadQueue([]), 4000);
   };
 
   const handleCreateFolder = (folderName) => {
@@ -135,27 +192,45 @@ const Dashboard = () => {
     saveToStorage(files, updatedFolders);
   };
 
-  const handleDeleteFile = async (fileId) => {
-    try {
-      // Call delete API
-      await fileService.deleteFile(fileId);
-
-      // Update local state after successful deletion
-      const updatedFiles = files.filter((f) => f.id !== fileId);
-      setFiles(updatedFiles);
-      saveToStorage(updatedFiles, folders);
-    } catch (error) {
-      console.error("Failed to delete file:", error);
-      alert("Failed to delete file: " + error.message);
-    }
+  const handleDeleteFile = (fileId) => {
+    const file = files.find((f) => f.id === fileId);
+    setConfirmDelete({
+      type: "file",
+      id: fileId,
+      name: file?.name || "this file",
+    });
   };
 
   const handleDeleteFolder = (folderId) => {
-    const updatedFolders = folders.filter((f) => f.id !== folderId);
-    const updatedFiles = files.filter((f) => f.folderId !== folderId);
-    setFolders(updatedFolders);
-    setFiles(updatedFiles);
-    saveToStorage(updatedFiles, updatedFolders);
+    const folder = folders.find((f) => f.id === folderId);
+    setConfirmDelete({
+      type: "folder",
+      id: folderId,
+      name: folder?.name || "this folder",
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    const { type, id } = confirmDelete;
+    setConfirmDelete(null);
+
+    if (type === "file") {
+      try {
+        await fileService.deleteFile(id);
+        const updatedFiles = files.filter((f) => f.id !== id);
+        setFiles(updatedFiles);
+        saveToStorage(updatedFiles, folders);
+      } catch (error) {
+        console.error("Failed to delete file:", error);
+      }
+    } else {
+      const updatedFolders = folders.filter((f) => f.id !== id);
+      const updatedFiles = files.filter((f) => f.folderId !== id);
+      setFolders(updatedFolders);
+      setFiles(updatedFiles);
+      saveToStorage(updatedFiles, updatedFolders);
+    }
   };
 
   const handleDownloadFile = async (file) => {
@@ -274,6 +349,21 @@ const Dashboard = () => {
         }}
         onSubmit={handleFileUpload}
         files={selectedFiles}
+      />
+
+      <UploadToast
+        uploads={uploadQueue}
+        onDismiss={() => setUploadQueue([])}
+        onCancel={handleCancelUpload}
+      />
+
+      <ConfirmDialog
+        isOpen={!!confirmDelete}
+        title={`Delete ${confirmDelete?.type === "folder" ? "Folder" : "File"}`}
+        message={`Are you sure you want to delete "${confirmDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
       />
     </div>
   );
