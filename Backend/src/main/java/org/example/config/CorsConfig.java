@@ -18,10 +18,11 @@ public class CorsConfig {
         config.setAllowedOriginPatterns(List.of(
                 "http://localhost:5173",
                 "https://*.ngrok-free.app",
-                "https://*.vercel.app"
+                "https://dropbox-mauve.vercel.app"
         ));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("Authorization", "Content-Disposition"));
         config.setMaxAge(3600L);
         config.setAllowCredentials(true);
 
