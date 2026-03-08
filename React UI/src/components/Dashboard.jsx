@@ -59,6 +59,8 @@ const Dashboard = () => {
 
   const handleFileSelect = (event) => {
     const files = Array.from(event.target.files);
+    // Reset the input value so the same file can be selected again
+    event.target.value = "";
     if (files.length > 0) {
       setSelectedFiles(files);
       setShowUploadModal(true);
