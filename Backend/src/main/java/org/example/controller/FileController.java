@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.example.dto.ConfirmUploadRequest;
 import org.example.dto.DownloadUrlResponse;
 import org.example.dto.FileDto;
 import org.example.dto.PresignRequest;
@@ -43,6 +44,26 @@ public class FileController {
     @PostMapping("/presign")
     public ResponseEntity<PresignResponse> presign(@RequestBody PresignRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(fileService.createPresignedUpload(request));
+    }
+
+    @Operation(
+            summary = "Confirm single-part upload complete",
+            description = "Call this after the file has been uploaded directly to R2 via the presigned PUT URL. " +
+                          "Marks the file status as READY and stamps the content hash for future deduplication. " +
+                          "Do NOT call this if deduplicated=true was returned from /presign — the file is already READY.",
+            security = @SecurityRequirement(name = "bearerAuth"),
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "File marked as READY"),
+                    @ApiResponse(responseCode = "400", description = "File not in PENDING state or access denied"),
+                    @ApiResponse(responseCode = "404", description = "File not found")
+            }
+    )
+    @PostMapping("/{fileId}/confirm")
+    public ResponseEntity<Void> confirmUpload(@PathVariable UUID fileId,
+                                              @RequestBody(required = false) ConfirmUploadRequest request,
+                                              @AuthenticationPrincipal User user) {
+        fileService.confirmUpload(fileId, user, request);
+        return ResponseEntity.ok().build();
     }
 
     @Operation(

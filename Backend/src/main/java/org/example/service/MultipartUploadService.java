@@ -56,7 +56,7 @@ public class MultipartUploadService {
         // --- Deduplication check (runs before partCount validation so clients can omit partCount) ---
         if (request.getContentHash() != null && !request.getContentHash().isBlank()) {
             var existing = fileMetadataRepository
-                    .findFirstByContentHash(request.getContentHash());
+                    .findFirstByContentHashAndStatus(request.getContentHash(), "COMPLETED");
             if (existing.isPresent()) {
                 FileMetadata source = existing.get();
                 UUID fileId = UUID.randomUUID();
@@ -169,7 +169,7 @@ public class MultipartUploadService {
 
         // Mark file as READY
         FileMetadata file = session.getFile();
-        file.setStatus("READY");
+        file.setStatus("COMPLETED");
         fileMetadataRepository.save(file);
 
         // Mark session as COMPLETED

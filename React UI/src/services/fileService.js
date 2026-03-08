@@ -95,6 +95,14 @@ export const fileService = {
     return true;
   },
 
+  async confirmUpload(fileId, contentHash) {
+    const response = await apiClient.post(`/files/${fileId}/confirm`, {
+      contentHash,
+    });
+
+    return response.ok;
+  },
+
   // ── Multipart upload ──────────────────────────────────────────────────────
 
   isMultipart(file) {

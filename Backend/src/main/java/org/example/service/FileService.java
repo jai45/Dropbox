@@ -1,5 +1,6 @@
 package org.example.service;
 
+import org.example.dto.ConfirmUploadRequest;
 import org.example.dto.DownloadUrlResponse;
 import org.example.dto.FileDto;
 import org.example.dto.PresignRequest;
@@ -45,7 +46,7 @@ public class FileService {
         // --- Deduplication check ---
         if (request.getContentHash() != null && !request.getContentHash().isBlank()) {
             var existing = fileMetadataRepository
-                    .findFirstByContentHash(request.getContentHash());
+                    .findFirstByContentHashAndStatus(request.getContentHash(), "COMPLETED");
             if (existing.isPresent()) {
                 FileMetadata source = existing.get();
                 UUID fileId = UUID.randomUUID();
@@ -85,6 +86,33 @@ public class FileService {
 
         String uploadUrl = r2Service.generateUploadUrl(objectKey, request.getContentType());
         return new PresignResponse(fileId, objectKey, uploadUrl, false);
+    }
+
+    /**
+     * Called by the client after it has finished uploading directly to R2.
+     * Transitions the file status PENDING → READY and stamps content_hash
+     * (if not already set) so future uploads of the same content are deduplicated.
+     */
+    @Transactional
+    public void confirmUpload(UUID fileId, User owner, ConfirmUploadRequest request) {
+        FileMetadata file = fileMetadataRepository.findByIdAndIsDeleted(fileId, "N")
+                .orElseThrow(() -> new IllegalArgumentException("File not found: " + fileId));
+
+        if (!file.getOwner().getId().equals(owner.getId())) {
+            throw new IllegalArgumentException("Access denied");
+        }
+
+        file.setStatus("COMPLETED");
+
+        // Stamp the hash if it wasn't already provided during presign
+        if (file.getContentHash() == null
+                && request != null
+                && request.getContentHash() != null
+                && !request.getContentHash().isBlank()) {
+            file.setContentHash(request.getContentHash());
+        }
+
+        fileMetadataRepository.save(file);
     }
 
     /**

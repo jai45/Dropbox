@@ -137,6 +137,10 @@ const Dashboard = () => {
               item.originalFile,
               controller.signal,
             );
+            await fileService.confirmUpload(
+              presignResponse.fileId,
+              item.sha256,
+            );
           }
 
           onProgress(i, 90);
