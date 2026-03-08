@@ -176,6 +176,21 @@ export const fileService = {
     }
   },
 
+  async confirmPart(uploadSessionId, partNumber, sizeBytes, eTag) {
+    const response = await apiClient.post("/multipart/confirm-part", {
+      uploadSessionId,
+      partNumber,
+      sizeBytes,
+      eTag,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to confirm part ${partNumber}`);
+    }
+
+    return response.json();
+  },
+
   async multipartUpload(file, ownerId, onProgress, signal, sha256) {
     let uploadSessionId = null;
 
@@ -204,28 +219,56 @@ export const fileService = {
         };
       }
 
-      // Step 2: Upload all chunks with a concurrency limit of 6
-      let completedParts = 0;
-      const tasks = parts.map(({ partNumber, presignedUrl }) => async () => {
-        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const start = (partNumber - 1) * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
+      // Build a set of part numbers already uploaded (resume scenario).
+      // Used to explicitly skip them even if the server accidentally includes
+      // them in parts[] — belt-and-suspenders on top of the server filtering.
+      const uploadedPartNumbers = new Set(
+        initResponse.resumed ? (initResponse.uploadedPartNumbers ?? []) : [],
+      );
 
-        const result = await this.uploadPart(
-          presignedUrl,
-          chunk,
-          partNumber,
-          signal,
-        );
+      // Only schedule parts that have NOT been uploaded yet
+      const pendingParts = parts.filter(
+        ({ partNumber }) => !uploadedPartNumbers.has(partNumber),
+      );
 
-        completedParts++;
-        onProgress(
-          Math.round(Math.min(90, 10 + (completedParts / parts.length) * 80)),
-        );
+      // Total parts across the whole file (for accurate progress %)
+      const totalParts = pendingParts.length + uploadedPartNumbers.size;
 
-        return result;
-      });
+      // Step 2: Upload pending chunks with a concurrency limit of 6
+      let completedParts = uploadedPartNumbers.size; // already-done parts count toward progress
+      const tasks = pendingParts.map(
+        ({ partNumber, presignedUrl }) =>
+          async () => {
+            if (signal?.aborted)
+              throw new DOMException("Aborted", "AbortError");
+
+            const start = (partNumber - 1) * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+
+            const result = await this.uploadPart(
+              presignedUrl,
+              chunk,
+              partNumber,
+              signal,
+            );
+
+            // Notify backend that this part landed successfully
+            await this.confirmPart(
+              uploadSessionId,
+              result.partNumber,
+              chunk.size,
+              result.etag,
+            );
+
+            completedParts++;
+            onProgress(
+              Math.round(Math.min(90, 10 + (completedParts / totalParts) * 80)),
+            );
+
+            return result;
+          },
+      );
 
       const partResults = await concurrentLimit(tasks, CONCURRENCY_LIMIT);
 

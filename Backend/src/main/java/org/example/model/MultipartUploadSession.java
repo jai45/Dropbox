@@ -30,6 +30,10 @@ public class MultipartUploadSession {
     @Column(name = "upload_id", nullable = false)
     private String uploadId;
 
+    /** Total number of parts the client originally planned to upload. */
+    @Column(name = "part_count", nullable = false)
+    private int partCount;
+
     /** IN_PROGRESS | COMPLETED | ABORTED */
     @Column(nullable = false)
     private String status = "IN_PROGRESS";

@@ -84,6 +84,25 @@ public class MultipartUploadController {
     }
 
     @Operation(
+            summary = "Confirm a part upload",
+            description = "Call this after every successful PUT to R2. " +
+                          "The backend marks the part as UPLOADED and stores the ETag so the upload " +
+                          "can be resumed if it is interrupted before completion.",
+            security = @SecurityRequirement(name = "bearerAuth"),
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Part confirmed",
+                            content = @Content(schema = @Schema(implementation = ConfirmPartResponse.class))),
+                    @ApiResponse(responseCode = "400", description = "Session or part not found, or access denied")
+            }
+    )
+    @PostMapping("/confirm-part")
+    public ResponseEntity<ConfirmPartResponse> confirmPart(
+            @RequestBody ConfirmPartRequest request,
+            @AuthenticationPrincipal User caller) {
+        return ResponseEntity.ok(multipartUploadService.confirmPart(request, caller));
+    }
+
+    @Operation(
             summary = "Abort a multipart upload",
             description = "Calls R2 AbortMultipartUpload to discard all uploaded parts and cleans up the DB session.",
             security = @SecurityRequirement(name = "bearerAuth"),

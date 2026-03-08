@@ -129,7 +129,7 @@ public class FileService {
      * Returns all non-deleted files belonging to the given user mapped to FileDto.
      */
     public List<FileDto> listFiles(User owner) {
-        return fileMetadataRepository.findByOwnerAndIsDeletedOrderByCreatedAtDesc(owner, "N")
+        return fileMetadataRepository.findByOwnerAndStatusAndIsDeletedOrderByCreatedAtDesc(owner,"COMPLETED", "N")
                 .stream()
                 .map(f -> new FileDto(
                         f.getId(),

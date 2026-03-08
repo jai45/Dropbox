@@ -13,7 +13,7 @@ import java.util.UUID;
 public interface FileMetadataRepository extends JpaRepository<FileMetadata, UUID> {
 
     // Only return non-deleted files for the user
-    List<FileMetadata> findByOwnerAndIsDeletedOrderByCreatedAtDesc(User owner, String isDeleted);
+    List<FileMetadata> findByOwnerAndStatusAndIsDeletedOrderByCreatedAtDesc(User owner, String status, String isDeleted);
 
     // Find a single file only if not deleted
     Optional<FileMetadata> findByIdAndIsDeleted(UUID id, String isDeleted);
