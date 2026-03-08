@@ -4,6 +4,7 @@ export const authService = {
   async register(username, email, password) {
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
@@ -27,6 +28,7 @@ export const authService = {
   async login(email, password) {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
@@ -46,15 +48,13 @@ export const authService = {
     return response.json();
   },
 
-  async refreshToken(refreshToken) {
+  async refreshToken() {
     const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        refreshToken,
-      }),
     });
 
     if (!response.ok) {
@@ -67,16 +67,14 @@ export const authService = {
     return response.json();
   },
 
-  async logout(refreshToken) {
+  async logout() {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/logout`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          refreshToken,
-        }),
       });
 
       if (!response.ok) {
@@ -93,15 +91,6 @@ export const authService = {
     if (authData) {
       const parsed = JSON.parse(authData);
       return parsed.accessToken;
-    }
-    return null;
-  },
-
-  getRefreshToken() {
-    const authData = localStorage.getItem("authData");
-    if (authData) {
-      const parsed = JSON.parse(authData);
-      return parsed.refreshToken;
     }
     return null;
   },

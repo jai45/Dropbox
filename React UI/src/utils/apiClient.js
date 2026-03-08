@@ -29,16 +29,10 @@ const refreshTokenIfNeeded = async () => {
   }
 
   try {
-    const refreshToken = authService.getRefreshToken();
-    if (!refreshToken) {
-      return false;
-    }
-
-    const response = await authService.refreshToken(refreshToken);
+    const response = await authService.refreshToken();
 
     const authData = {
       accessToken: response.accessToken,
-      refreshToken: response.refreshToken,
       accessExpiresIn: response.accessExpiresIn,
       expiresAt: Date.now() + response.accessExpiresIn,
     };
@@ -82,6 +76,7 @@ export const apiClient = {
 
     const response = await fetch(`${API_BASE_URL}${url}`, {
       ...options,
+      credentials: "include",
       headers: {
         ...headers,
         ...options.headers,
@@ -97,6 +92,7 @@ export const apiClient = {
         const retryHeaders = getAuthHeaders();
         const retryResponse = await fetch(`${API_BASE_URL}${url}`, {
           ...options,
+          credentials: "include",
           headers: {
             ...retryHeaders,
             ...options.headers,

@@ -5,11 +5,12 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import org.example.dto.AuthResponse;
 import org.example.dto.LoginRequest;
-import org.example.dto.RefreshRequest;
 import org.example.dto.RegisterRequest;
 import org.example.service.AuthService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,11 +20,33 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
+    private static final String REFRESH_COOKIE = "refreshToken";
+
     private final AuthService authService;
+
+    @Value("${jwt.refresh-expiry-ms}")
+    private long refreshExpiryMs;
 
     public AuthController(AuthService authService) {
         this.authService = authService;
     }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    private void setRefreshCookie(HttpServletResponse response, String rawToken) {
+        // Use raw header to support SameSite (not available on Cookie API pre-Servlet 6)
+        response.addHeader("Set-Cookie",
+                String.format("%s=%s; Max-Age=%d; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Strict",
+                        REFRESH_COOKIE, rawToken, (int) (refreshExpiryMs / 1000)));
+    }
+
+    private void clearRefreshCookie(HttpServletResponse response) {
+        response.addHeader("Set-Cookie",
+                String.format("%s=; Max-Age=0; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Strict",
+                        REFRESH_COOKIE));
+    }
+
+    // ── endpoints ────────────────────────────────────────────────────────────
 
     @Operation(
             summary = "Register a new user",
@@ -34,8 +57,11 @@ public class AuthController {
             }
     )
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
+    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request,
+                                                  HttpServletResponse response) {
+        AuthService.AuthResult result = authService.register(request);
+        setRefreshCookie(response, result.rawRefreshToken());
+        return ResponseEntity.status(HttpStatus.CREATED).body(result.response());
     }
 
     @Operation(
@@ -47,34 +73,51 @@ public class AuthController {
             }
     )
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
-        return ResponseEntity.ok(authService.login(request));
+    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request,
+                                               HttpServletResponse response) {
+        AuthService.AuthResult result = authService.login(request);
+        setRefreshCookie(response, result.rawRefreshToken());
+        return ResponseEntity.ok(result.response());
     }
 
     @Operation(
             summary = "Refresh access token",
-            description = "Exchanges a valid refresh token for a new access token and rotated refresh token",
+            description = "Reads the refresh token from the HttpOnly cookie, issues a new access token and rotates the refresh token cookie",
             responses = {
                     @ApiResponse(responseCode = "200", description = "New tokens issued",
                             content = @Content(schema = @Schema(implementation = AuthResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid, expired or revoked refresh token")
+                    @ApiResponse(responseCode = "400", description = "Missing, invalid, expired or revoked refresh token")
             }
     )
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(@RequestBody RefreshRequest request) {
-        return ResponseEntity.ok(authService.refresh(request));
+    public ResponseEntity<AuthResponse> refresh(
+            @CookieValue(name = REFRESH_COOKIE, required = false) String rawRefreshToken,
+            HttpServletResponse response) {
+
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        AuthService.AuthResult result = authService.refresh(rawRefreshToken);
+        setRefreshCookie(response, result.rawRefreshToken());
+        return ResponseEntity.ok(result.response());
     }
 
     @Operation(
             summary = "Logout",
-            description = "Revokes the provided refresh token",
+            description = "Revokes the refresh token cookie and clears it",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Logged out successfully")
             }
     )
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestBody RefreshRequest request) {
-        authService.logout(request);
+    public ResponseEntity<Void> logout(
+            @CookieValue(name = REFRESH_COOKIE, required = false) String rawRefreshToken,
+            HttpServletResponse response) {
+
+        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
+            authService.logout(rawRefreshToken);
+        }
+        clearRefreshCookie(response);
         return ResponseEntity.noContent().build();
     }
 }

@@ -2,7 +2,6 @@ package org.example.service;
 
 import org.example.dto.AuthResponse;
 import org.example.dto.LoginRequest;
-import org.example.dto.RefreshRequest;
 import org.example.dto.RegisterRequest;
 import org.example.model.RefreshToken;
 import org.example.model.User;
@@ -24,6 +23,9 @@ import java.util.UUID;
 
 @Service
 public class AuthService {
+
+    /** Carries both the JSON-safe response and the raw refresh token for cookie setting. */
+    public record AuthResult(AuthResponse response, String rawRefreshToken) {}
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -47,7 +49,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse register(RegisterRequest request) {
+    public AuthResult register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new IllegalArgumentException("Email already in use");
         }
@@ -67,7 +69,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse login(LoginRequest request) {
+    public AuthResult login(LoginRequest request) {
         User user = userRepository
                 .findByUsernameOrEmail(request.getUsernameOrEmail(), request.getUsernameOrEmail())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid credentials"));
@@ -83,8 +85,8 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse refresh(RefreshRequest request) {
-        String tokenHash = sha256(request.getRefreshToken());
+    public AuthResult refresh(String rawRefreshToken) {
+        String tokenHash = sha256(rawRefreshToken);
 
         RefreshToken stored = refreshTokenRepository.findByTokenHash(tokenHash)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
@@ -104,8 +106,8 @@ public class AuthService {
     }
 
     @Transactional
-    public void logout(RefreshRequest request) {
-        String tokenHash = sha256(request.getRefreshToken());
+    public void logout(String rawRefreshToken) {
+        String tokenHash = sha256(rawRefreshToken);
         refreshTokenRepository.findByTokenHash(tokenHash).ifPresent(token -> {
             token.setRevoked(true);
             refreshTokenRepository.save(token);
@@ -114,7 +116,7 @@ public class AuthService {
 
     // --- helpers ---
 
-    private AuthResponse buildAuthResponse(User user) {
+    private AuthResult buildAuthResponse(User user) {
         String accessToken = jwtService.generateAccessToken(user);
 
         // Generate a cryptographically random refresh token
@@ -130,14 +132,14 @@ public class AuthService {
         refreshToken.setCreatedAt(OffsetDateTime.now());
         refreshTokenRepository.save(refreshToken);
 
-        return new AuthResponse(
+        AuthResponse authResponse = new AuthResponse(
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
                 accessToken,
-                rawRefreshToken,
                 accessExpiryMs
         );
+        return new AuthResult(authResponse, rawRefreshToken);
     }
 
     private String sha256(String input) {

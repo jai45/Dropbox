@@ -29,7 +29,6 @@ export const AuthProvider = ({ children }) => {
 
     const authData = {
       accessToken: response.accessToken,
-      refreshToken: response.refreshToken,
       accessExpiresIn: response.accessExpiresIn,
       expiresAt: Date.now() + response.accessExpiresIn,
     };
@@ -52,7 +51,6 @@ export const AuthProvider = ({ children }) => {
 
     const authData = {
       accessToken: response.accessToken,
-      refreshToken: response.refreshToken,
       accessExpiresIn: response.accessExpiresIn,
       expiresAt: Date.now() + response.accessExpiresIn,
     };
@@ -66,10 +64,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      const refreshToken = authService.getRefreshToken();
-      if (refreshToken) {
-        await authService.logout(refreshToken);
-      }
+      await authService.logout();
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
@@ -82,17 +77,10 @@ export const AuthProvider = ({ children }) => {
 
   const refreshAccessToken = async () => {
     try {
-      const refreshToken = authService.getRefreshToken();
-      if (!refreshToken) {
-        logout();
-        return null;
-      }
-
-      const response = await authService.refreshToken(refreshToken);
+      const response = await authService.refreshToken();
 
       const authData = {
         accessToken: response.accessToken,
-        refreshToken: response.refreshToken,
         accessExpiresIn: response.accessExpiresIn,
         expiresAt: Date.now() + response.accessExpiresIn,
       };
