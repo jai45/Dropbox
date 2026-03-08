@@ -37,6 +37,9 @@ public class FileMetadata {
     @Column(nullable = false)
     private String status;
 
+    @Column(name = "content_hash")
+    private String contentHash;
+
     @Column(name = "is_deleted", nullable = false)
     private String isDeleted = "N";
 

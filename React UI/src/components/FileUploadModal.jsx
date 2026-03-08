@@ -1,10 +1,14 @@
 import { useState, useEffect } from "react";
 import styles from "./FileUploadModal.module.css";
+import { useFileFingerprint, fileKey } from "../hooks/useFileFingerprint";
 
 const FileUploadModal = ({ isOpen, onClose, onSubmit, files }) => {
   const [fileNames, setFileNames] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
+
+  const { fingerprintMap, computeFingerprints, isHashing, resetFingerprints } =
+    useFileFingerprint();
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -24,12 +28,15 @@ const FileUploadModal = ({ isOpen, onClose, onSubmit, files }) => {
           return { name, extension, fullName: file.name, originalFile: file };
         });
         setFileNames(names);
+        computeFingerprints(files);
       } else {
         setFileNames([]);
+        resetFingerprints();
       }
     }, 0);
 
     return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, files]);
 
   const handleNameChange = (index, newName) => {
@@ -45,6 +52,7 @@ const FileUploadModal = ({ isOpen, onClose, onSubmit, files }) => {
     const filesWithNewNames = fileNames.map((item) => ({
       originalFile: item.originalFile,
       newName: item.name + item.extension,
+      sha256: fingerprintMap[fileKey(item.originalFile)]?.hash ?? null,
     }));
 
     try {
@@ -53,6 +61,7 @@ const FileUploadModal = ({ isOpen, onClose, onSubmit, files }) => {
       });
       onClose();
       setUploadProgress({});
+      resetFingerprints();
     } catch (error) {
       console.error("Upload failed:", error);
       alert("Upload failed: " + error.message);
@@ -70,6 +79,23 @@ const FileUploadModal = ({ isOpen, onClose, onSubmit, files }) => {
   if (!isOpen) return null;
 
   const allNamesValid = fileNames.every((item) => item.name.trim().length > 0);
+  const allFingerprintsDone =
+    !isHashing &&
+    fileNames.every((item) => {
+      const entry = fingerprintMap[fileKey(item.originalFile)];
+      return entry?.status === "done" || entry?.status === "error";
+    });
+
+  // Overall hashing progress across all files (0-100)
+  const overallHashProgress =
+    fileNames.length === 0
+      ? 0
+      : Math.round(
+          fileNames.reduce((sum, item) => {
+            const entry = fingerprintMap[fileKey(item.originalFile)];
+            return sum + (entry?.progress ?? 0);
+          }, 0) / fileNames.length,
+        );
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -123,11 +149,13 @@ const FileUploadModal = ({ isOpen, onClose, onSubmit, files }) => {
             <button
               type="submit"
               className={styles.submitBtn}
-              disabled={!allNamesValid || uploading}
+              disabled={!allNamesValid || uploading || !allFingerprintsDone}
             >
               {uploading
-                ? "Uploading..."
-                : `Upload ${fileNames.length} ${fileNames.length === 1 ? "File" : "Files"}`}
+                ? "Uploading…"
+                : isHashing
+                  ? `Preparing upload ${overallHashProgress}%`
+                  : `Upload ${fileNames.length} ${fileNames.length === 1 ? "File" : "Files"}`}
             </button>
           </div>
         </form>

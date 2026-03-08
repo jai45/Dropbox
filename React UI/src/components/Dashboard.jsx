@@ -112,6 +112,7 @@ const Dashboard = () => {
               updateToast(i, progress);
             },
             controller.signal,
+            item.sha256,
           );
           fileId = result.fileId;
           objectKey = result.objectKey;
@@ -123,17 +124,20 @@ const Dashboard = () => {
           const presignResponse = await fileService.getPresignedUrl(
             item.originalFile,
             ownerId,
+            item.sha256,
             controller.signal,
           );
 
           onProgress(i, 30);
           updateToast(i, 30);
 
-          await fileService.uploadToPresignedUrl(
-            presignResponse.uploadUrl,
-            item.originalFile,
-            controller.signal,
-          );
+          if (!presignResponse.deduplicated) {
+            await fileService.uploadToPresignedUrl(
+              presignResponse.uploadUrl,
+              item.originalFile,
+              controller.signal,
+            );
+          }
 
           onProgress(i, 90);
           updateToast(i, 90);

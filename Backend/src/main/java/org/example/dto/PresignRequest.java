@@ -11,4 +11,6 @@ public class PresignRequest {
     private String contentType;
     private Long sizeBytes;
     private String status;
+    /** Optional SHA-256 (or any) hash of the file content for server-side deduplication. */
+    private String contentHash;
 }

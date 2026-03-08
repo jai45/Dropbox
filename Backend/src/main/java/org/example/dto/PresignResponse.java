@@ -10,5 +10,8 @@ import java.util.UUID;
 public class PresignResponse {
     private UUID fileId;
     private String objectKey;
-    private String uploadUrl;   // presigned PUT URL for client to upload directly to R2
+    /** Presigned PUT URL for client to upload directly to R2. Null when deduplicated = true. */
+    private String uploadUrl;
+    /** True when the file already existed in storage — no upload is needed. */
+    private boolean deduplicated;
 }

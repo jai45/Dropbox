@@ -25,7 +25,7 @@ const concurrentLimit = async (tasks, limit) => {
 };
 
 export const fileService = {
-  async getPresignedUrl(file, ownerId, signal) {
+  async getPresignedUrl(file, ownerId, sha256, signal) {
     const response = await apiClient.post(
       "/files/presign",
       {
@@ -34,6 +34,7 @@ export const fileService = {
         contentType: file.type || "application/octet-stream",
         sizeBytes: file.size,
         status: "Pending",
+        contentHash: sha256,
       },
       { signal },
     );
@@ -100,7 +101,7 @@ export const fileService = {
     return file.size > MULTIPART_THRESHOLD;
   },
 
-  async initiateMultipartUpload(file, ownerId, signal) {
+  async initiateMultipartUpload(file, ownerId, sha256, signal) {
     const partCount = Math.ceil(file.size / CHUNK_SIZE);
 
     const response = await apiClient.post(
@@ -111,6 +112,7 @@ export const fileService = {
         contentType: file.type || "application/octet-stream",
         sizeBytes: file.size,
         partCount,
+        contentHash: sha256,
       },
       { signal },
     );
@@ -166,7 +168,7 @@ export const fileService = {
     }
   },
 
-  async multipartUpload(file, ownerId, onProgress, signal) {
+  async multipartUpload(file, ownerId, onProgress, signal, sha256) {
     let uploadSessionId = null;
 
     try {
@@ -175,12 +177,24 @@ export const fileService = {
       const initResponse = await this.initiateMultipartUpload(
         file,
         ownerId,
+        sha256,
         signal,
       );
       uploadSessionId = initResponse.uploadSessionId;
       const parts = initResponse.parts;
 
       onProgress(10);
+
+      // If the server already has this content (deduplication), skip uploading
+      if (initResponse.deduplicated) {
+        // Simulate the same progress milestones so the UI feels identical
+        onProgress(92);
+        onProgress(100);
+        return {
+          fileId: initResponse.fileId,
+          objectKey: initResponse.objectKey,
+        };
+      }
 
       // Step 2: Upload all chunks with a concurrency limit of 6
       let completedParts = 0;

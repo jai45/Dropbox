@@ -18,4 +18,6 @@ public class InitiateMultipartRequest {
      * Each part must be ≥ 5 MB except the last one.
      */
     private int partCount;
+    /** Optional SHA-256 (or any) hash of the full file content for server-side deduplication. */
+    private String contentHash;
 }

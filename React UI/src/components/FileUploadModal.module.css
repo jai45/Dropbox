@@ -175,8 +175,13 @@
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, opacity 0.2s;
   border: none;
+  white-space: nowrap;
+  text-align: center;
+}
+.submitBtn {
+  min-width: 220px;
 }
 
 .cancelBtn {

@@ -32,11 +32,40 @@ public class FileService {
 
     /**
      * Saves file metadata to DB and returns a presigned PUT URL for direct R2 upload.
+     * <p>
+     * If {@code request.contentHash} is provided and a READY file with that hash already
+     * exists, a new metadata record is created pointing to the <em>same</em> R2 object —
+     * no presigned URL is generated and {@code deduplicated = true} is returned.
      */
     @Transactional
     public PresignResponse createPresignedUpload(PresignRequest request) {
         User owner = userRepository.findById(request.getOwnerId())
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + request.getOwnerId()));
+
+        // --- Deduplication check ---
+        if (request.getContentHash() != null && !request.getContentHash().isBlank()) {
+            var existing = fileMetadataRepository
+                    .findFirstByContentHash(request.getContentHash());
+            if (existing.isPresent()) {
+                FileMetadata source = existing.get();
+                UUID fileId = UUID.randomUUID();
+
+                FileMetadata deduped = new FileMetadata();
+                deduped.setId(fileId);
+                deduped.setOwner(owner);
+                deduped.setOriginalName(request.getOriginalName());
+                deduped.setObjectKey(source.getObjectKey());   // reuse existing blob
+                deduped.setSizeBytes(request.getSizeBytes() != null ? request.getSizeBytes() : source.getSizeBytes());
+                deduped.setContentType(request.getContentType() != null ? request.getContentType() : source.getContentType());
+                deduped.setContentHash(request.getContentHash());
+                deduped.setStatus("READY");
+                deduped.setCreatedAt(OffsetDateTime.now());
+                fileMetadataRepository.save(deduped);
+
+                // Return immediately — no upload needed
+                return new PresignResponse(fileId, source.getObjectKey(), null, true);
+            }
+        }
 
         UUID fileId = UUID.randomUUID();
         // object key pattern: <ownerId>/<fileId>/<originalName>
@@ -49,12 +78,13 @@ public class FileService {
         file.setObjectKey(objectKey);
         file.setSizeBytes(request.getSizeBytes());
         file.setContentType(request.getContentType());
+        file.setContentHash(request.getContentHash());
         file.setStatus("PENDING");
         file.setCreatedAt(OffsetDateTime.now());
         fileMetadataRepository.save(file);
 
         String uploadUrl = r2Service.generateUploadUrl(objectKey, request.getContentType());
-        return new PresignResponse(fileId, objectKey, uploadUrl);
+        return new PresignResponse(fileId, objectKey, uploadUrl, false);
     }
 
     /**

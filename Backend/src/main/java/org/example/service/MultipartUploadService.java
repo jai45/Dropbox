@@ -39,18 +39,47 @@ public class MultipartUploadService {
      * Creates a PENDING FileMetadata record, calls R2 CreateMultipartUpload, then
      * pre-generates a presigned PUT URL for <em>every</em> part so the client can
      * upload all chunks concurrently without any additional round-trips.
+     * <p>
+     * If {@code request.contentHash} is provided and a READY file with that hash already
+     * exists, a new metadata record pointing to the same R2 object is created immediately —
+     * no multipart upload is started and {@code deduplicated = true} is returned.
      */
     @Transactional
     public InitiateMultipartResponse initiate(InitiateMultipartRequest request, User caller) {
-        if (request.getPartCount() < 1 || request.getPartCount() > 10_000) {
-            throw new IllegalArgumentException("partCount must be between 1 and 10 000");
-        }
-
         User owner = userRepository.findById(request.getOwnerId())
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + request.getOwnerId()));
 
         if (!owner.getId().equals(caller.getId())) {
             throw new IllegalArgumentException("Access denied: ownerId does not match the authenticated user");
+        }
+
+        // --- Deduplication check (runs before partCount validation so clients can omit partCount) ---
+        if (request.getContentHash() != null && !request.getContentHash().isBlank()) {
+            var existing = fileMetadataRepository
+                    .findFirstByContentHash(request.getContentHash());
+            if (existing.isPresent()) {
+                FileMetadata source = existing.get();
+                UUID fileId = UUID.randomUUID();
+
+                FileMetadata deduped = new FileMetadata();
+                deduped.setId(fileId);
+                deduped.setOwner(owner);
+                deduped.setOriginalName(request.getOriginalName());
+                deduped.setObjectKey(source.getObjectKey());   // reuse existing blob
+                deduped.setSizeBytes(request.getSizeBytes() != null ? request.getSizeBytes() : source.getSizeBytes());
+                deduped.setContentType(request.getContentType() != null ? request.getContentType() : source.getContentType());
+                deduped.setContentHash(request.getContentHash());
+                deduped.setStatus("READY");
+                deduped.setCreatedAt(OffsetDateTime.now());
+                fileMetadataRepository.save(deduped);
+
+                // Return immediately — no R2 upload session needed
+                return new InitiateMultipartResponse(null, fileId, source.getObjectKey(), null, null, true);
+            }
+        }
+
+        if (request.getPartCount() < 1 || request.getPartCount() > 10_000) {
+            throw new IllegalArgumentException("partCount must be between 1 and 10 000");
         }
 
         UUID fileId = UUID.randomUUID();
@@ -64,6 +93,7 @@ public class MultipartUploadService {
         file.setObjectKey(objectKey);
         file.setSizeBytes(request.getSizeBytes());
         file.setContentType(request.getContentType());
+        file.setContentHash(request.getContentHash());
         file.setStatus("PENDING");
         file.setCreatedAt(OffsetDateTime.now());
         fileMetadataRepository.save(file);
@@ -93,7 +123,7 @@ public class MultipartUploadService {
         session.setUpdatedAt(now);
         sessionRepository.save(session);
 
-        return new InitiateMultipartResponse(sessionId, fileId, objectKey, uploadId, partUrls);
+        return new InitiateMultipartResponse(sessionId, fileId, objectKey, uploadId, partUrls, false);
     }
 
     /**
