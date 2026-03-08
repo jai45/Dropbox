@@ -306,19 +306,11 @@ public class MultipartUploadService {
         part.setUploadedAt(OffsetDateTime.now());
         partRepository.save(part);
 
-        // Update session's updatedAt timestamp
-        session.setUpdatedAt(OffsetDateTime.now());
-        sessionRepository.save(session);
-
-        long uploadedCount = partRepository
-                .findBySessionIdAndStatusOrderByPartNumber(session.getId(), "UPLOADED")
-                .size();
-
         return new ConfirmPartResponse(
                 session.getId(),
                 request.getPartNumber(),
                 "UPLOADED",
-                (int) uploadedCount,
+                0, // the client already knows the ETag and size, so no need to return them here
                 session.getPartCount()
         );
     }
